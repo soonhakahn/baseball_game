@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>3D 야구: 투구와 타격</title>
+<style>
+  :root { --panel: rgba(12, 20, 34, 0.72); --accent: #ffb020; --text: #f4f7fb; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0c1422; color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .hud { position: fixed; left: 0; right: 0; padding: 0 12px; pointer-events: none; z-index: 2; }
+  #top { top: max(10px, env(safe-area-inset-top)); display: flex; gap: 10px; align-items: stretch; justify-content: space-between; }
+  .panel { background: var(--panel); border-radius: 12px; padding: 8px 12px; backdrop-filter: blur(6px); }
+  #score .big { font-size: 22px; font-weight: 700; line-height: 1.1; }
+  #score .small { font-size: 12px; opacity: .8; }
+  #count { display: grid; grid-template-columns: auto auto; gap: 2px 8px; align-items: center; font-size: 12px; }
+  .dots { display: flex; gap: 4px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: rgba(255,255,255,.22); }
+  .dot.on.b { background: #5ecb62; } .dot.on.s { background: #ffcf3f; } .dot.on.o { background: #ff5d52; }
+  #bases { position: relative; width: 54px; height: 54px; }
+  .base { position: absolute; width: 16px; height: 16px; background: rgba(255,255,255,.25); transform: rotate(45deg); }
+  .base.on { background: var(--accent); }
+  #b2 { left: 19px; top: 3px; } #b3 { left: 4px; top: 19px; } #b1 { left: 34px; top: 19px; }
+  #banner { top: 26%; text-align: center; font-size: clamp(34px, 9vw, 64px); font-weight: 800; letter-spacing: -1px;
+    text-shadow: 0 3px 14px rgba(0,0,0,.55); opacity: 0; transition: opacity .15s; }
+  #banner.show { opacity: 1; }
+  #info { top: calc(26% + 74px); text-align: center; font-size: 14px; text-shadow: 0 2px 8px rgba(0,0,0,.7); min-height: 20px; }
+  #bottom { bottom: max(12px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  #help { font-size: 13px; text-align: center; max-width: 520px; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+  #pitchbar { display: none; gap: 8px; pointer-events: auto; }
+  #pitchbar button { min-width: 74px; padding: 10px 8px; border: 2px solid transparent; border-radius: 12px; background: var(--panel);
+    color: var(--text); font: inherit; font-size: 14px; font-weight: 600; }
+  #pitchbar button.sel { border-color: var(--accent); color: var(--accent); }
+  .overlay { position: fixed; inset: 0; z-index: 5; display: none; align-items: center; justify-content: center; padding: 20px;
+    background: rgba(8, 14, 26, .86); text-align: center; }
+  .overlay.show { display: flex; }
+  .card { max-width: 420px; width: 100%; }
+  .card h1 { margin: 0 0 6px; font-size: 30px; } .card p { margin: 6px 0 14px; line-height: 1.5; opacity: .9; font-size: 14px; }
+  .btn { display: block; width: 100%; margin: 10px 0; padding: 15px; border: 0; border-radius: 14px; background: var(--accent); color: #1b1400;
+    font: inherit; font-size: 17px; font-weight: 800; }
+  .btn.alt { background: #2b3a55; color: var(--text); }
+  .note { font-size: 12px; opacity: .65; margin-top: 12px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hud" id="top">
+  <div class="panel" id="score"><div class="big" id="runs">0</div><div class="small" id="inning"></div></div>
+  <div class="panel" id="count">
+    <span>볼</span><span class="dots" id="dB"></span>
+    <span>스트라이크</span><span class="dots" id="dS"></span>
+    <span>아웃</span><span class="dots" id="dO"></span>
+  </div>
+  <div class="panel"><div id="bases"><div class="base" id="b2"></div><div class="base" id="b3"></div><div class="base" id="b1"></div></div></div>
+</div>
+<div class="hud" id="banner"></div>
+<div class="hud" id="info"></div>
+<div class="hud" id="bottom">
+  <div id="pitchbar"></div>
+  <div id="help"></div>
+</div>
+
+<div class="overlay show" id="menu">
+  <div class="card">
+    <h1>3D 야구</h1>
+    <p>3이닝 경기. 공이 홈플레이트에 닿는 순간에 맞춰 화면을 탭해서 치거나, 구종과 위치를 골라 던지세요.</p>
+    <button class="btn" data-mode="bat">타자로 시작 (내가 친다)</button>
+    <button class="btn alt" data-mode="pitch">투수로 시작 (내가 던진다)</button>
+    <p class="note">실제 구단·선수·로고와 무관한 오리지널 게임입니다.</p>
+  </div>
+</div>
+<div class="overlay" id="over">
+  <div class="card">
+    <h1 id="overTitle">경기 종료</h1>
+    <p id="overText"></p>
+    <button class="btn" id="again">다시 하기</button>
+    <button class="btn alt" id="toMenu">모드 선택</button>
+  </div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
